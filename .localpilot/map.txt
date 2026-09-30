@@ -1,0 +1,90 @@
+## WORKSPACE EXECUTIVE SUMMARY (YAML)
+# Generated: 2026-08-14
+# Root: E:\Projects\My Projects\MessengerAzure\Api\MessengerApi
+Architecture:
+  Type: Clean Architecture (.NET 10)
+  Scale: ~40 relevant source files
+  Pattern: CQRS + MediatR + Outbox Pattern
+  Database: PostgreSQL (via EF Core + Npgsql)
+  Realtime: SignalR (Azure SignalR in production)
+  Cache/Presence: Redis (StackExchange.Redis)
+  Storage: Azure Blob Storage (attachments)
+  Auth: JWT Bearer (OAuth2 / Azure AD)
+  Logging: Serilog
+  Observability: OpenTelemetry + Application Insights
+  Secrets: Azure Key Vault
+
+Layers:
+  - Domain:          Entities, Repository interfaces, Enums
+  - Application:     CQRS Commands + Handlers, IRealtimeNotifier
+  - Infrastructure:  EF Core DbContext, Repository implementations, DI wiring
+  - WebAPI:          Controllers, SignalR Hub, Background services, Program.cs
+
+Domain_Entities:
+  - User             (Id: string/OAuth sub, UserName, AvatarUrl, IsOnline, LastSeenAt)
+  - Chat             (Id: Guid, Name?, IsGroup, OwnerId?, CreatedAt, Members)
+  - ChatMember       (ChatId + UserId composite PK, JoinedAt)
+  - Message          (Id: Guid, ChatId, SenderId, Text, CreatedAt)
+  - Friendship       (Id: Guid, UserId, FriendId, Status: Pending|Accepted, UpdatedAt)
+  - OutboxMessage    (Id, Type, Payload, OccurredAt, SentAt?, Attempts, NextAttemptAt?, DeadLetterAt?)
+
+Domain_Repositories (interfaces):
+  - IUserRepository        GetByIdAsync, AddAsync, UpdateAsync, GetPagedAsync, GetFriendsAsync
+  - IChatRepository        GetByIdAsync, AddAsync, AddMemberAsync, GetDirectChatsForUserAsync,
+                           GetAllChatsForUserAsync, IsMemberAsync, FindDirectChatAsync
+  - IMessageRepository     AddAsync, GetMessagesAsync(chatId, limit, before)
+  - IFriendshipRepository  CreateRequestAsync, AcceptRequestAsync, RemoveFriendAsync,
+                           GetFriendshipsForUserAsync, GetByIdAsync, FindRequestAsync
+  - IOutboxRepository      AddAsync, AddMessageAndOutboxAsync, GetPendingAsync, MarkSentAsync,
+                           FindByIdempotencyKeyAsync, UpdateAsync
+
+Application_Commands:
+  - SendMessageCommand       → SendMessageCommandHandler    (Idempotency + Outbox)
+  - CreateGroupCommand       → CreateGroupCommandHandler    (creates chat + adds members)
+  - AddMemberCommand         → AddMemberCommandHandler
+  - SendFriendRequestCommand → SendFriendRequestCommandHandler
+  - AcceptFriendRequestCommand → AcceptFriendRequestCommandHandler (notifies requester)
+  - RemoveFriendCommand      → RemoveFriendCommandHandler
+  - SetOnlineStatusCommand   → SetOnlineStatusCommandHandler
+
+Controllers:
+  - UsersController      GET /api/users (paged, search, filter), GET /api/users/{id}
+  - ChatsController      POST /api/chats/group, POST /api/chats/direct/{targetUserId},
+                         POST /api/chats/{chatId}/members, GET /api/chats/me
+  - MessagesController   GET /api/messages/{chatId}?limit&before
+  - FriendsController    POST /api/friends/{friendId}, POST /api/friends/{friendId}/accept,
+                         DELETE /api/friends/{friendId}, GET /api/friends/me,
+                         GET /api/friends/requests
+  - AttachmentsController POST /api/attachments/upload (max 20MB, allowed MIME types, [Authorize])
+
+SignalR_Hub (ChatHub @ /chathub):
+  - OnConnectedAsync     → tracks presence, broadcasts UserWentOnline
+  - OnDisconnectedAsync  → tracks presence, broadcasts UserWentOffline when last conn drops
+  - JoinChatRoom(chatId) → adds connection to SignalR group
+  - LeaveChatRoom(chatId)→ removes connection from SignalR group
+  Server→Client events: NewMessage, UserWentOnline, UserWentOffline,
+                        FriendRequestAccepted, AddedToGroup, OutboxDeadLetter
+
+Background_Services:
+  - OutboxDispatcher     polls DB every 5s, dispatches pending OutboxMessages via SignalR,
+                         exponential backoff (2^attempts seconds), dead-letter after 5 attempts
+
+Presence:
+  - PresenceService      Redis SET per user (presence:{userId}), pub/sub on changes
+  - NullPresenceService  no-op fallback when Redis is not configured (dev mode)
+
+Infrastructure:
+  - ApplicationDbContext  DbSet for all entities, snake_case naming (Npgsql convention),
+                          composite PK on ChatMember, index on Friendship(UserId, FriendId, Status)
+  - DependencyInjection   AddInfrastructure() — EF Core + all repository registrations
+
+Azure_Integration:
+  - Azure Key Vault       secrets loaded on startup if KeyVault:Endpoint is set
+  - Azure SignalR         used in non-Development environments
+  - Azure Blob Storage    attachments container (private access)
+  - Application Insights  telemetry if InstrumentationKey is set
+
+Tests (xUnit + Moq):
+  - SendMessageCommandHandlerTests
+  - OutboxDispatcherTests
+  - IdempotencyHandlerTests

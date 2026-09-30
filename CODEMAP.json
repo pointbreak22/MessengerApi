@@ -1,0 +1,92 @@
+{
+  "repo": "MessengerApi",
+  "generated": "2026-08-12T00:00:00Z",
+  "projects": [
+    {
+      "name": "WebAPI",
+      "path": "WebAPI",
+      "type": "web",
+      "description": "ASP.NET Core Web API + SignalR hub",
+      "keyFiles": [
+        { "path": "WebAPI/Program.cs", "role": "startup" },
+        { "path": "WebAPI/Hubs/ChatHub.cs", "role": "signalr-hub" },
+        { "path": "WebAPI/Controllers/WeatherForecastController.cs", "role": "sample-controller" },
+        { "path": "WebAPI/WeatherForecast.cs", "role": "sample-model" }
+      ],
+      "diFiles": [ "Infrastructure/DependencyInjection.cs" ],
+      "endpoints": [ { "type": "hub", "route": "/chathub", "hub": "WebAPI.Hubs.ChatHub" } ]
+    },
+    {
+      "name": "Domain",
+      "path": "Domain",
+      "type": "domain",
+      "description": "Domain entities and enums",
+      "entities": [
+        "Domain/Entities/User.cs",
+        "Domain/Entities/Chat.cs",
+        "Domain/Entities/Message.cs",
+        "Domain/Entities/Friendship.cs",
+        "Domain/Enums/FriendshipStatus.cs"
+      ],
+      "interfaces": [
+        "Domain/Repositories/IUserRepository.cs",
+        "Domain/Repositories/IChatRepository.cs",
+        "Domain/Repositories/IMessageRepository.cs"
+      ]
+    },
+    {
+      "name": "Infrastructure",
+      "path": "Infrastructure",
+      "type": "infrastructure",
+      "description": "EF Core persistence, repository implementations",
+      "keyFiles": [
+        { "path": "Infrastructure/Persistence/ApplicationDbContext.cs", "role": "dbcontext" },
+        { "path": "Infrastructure/DependencyInjection.cs", "role": "di-registrations" }
+      ],
+      "repositories": [
+        "Infrastructure/Repositories/EfUserRepository.cs",
+        "Infrastructure/Repositories/EfChatRepository.cs",
+        "Infrastructure/Repositories/EfMessageRepository.cs"
+      ]
+    },
+    {
+      "name": "Application",
+      "path": "Application",
+      "type": "application",
+      "description": "CQRS commands/handlers (MediatR)",
+      "commands": [
+        "Application/Commands/SendMessageCommand.cs",
+        "Application/Commands/SetOnlineStatusCommand.cs"
+      ],
+      "handlers": [
+        "Application/Handlers/SendMessageCommandHandler.cs",
+        "Application/Handlers/SetOnlineStatusCommandHandler.cs"
+      ]
+    },
+    {
+      "name": "Tests",
+      "path": "Tests",
+      "type": "tests",
+      "description": "Unit tests (xUnit + Moq)",
+      "keyFiles": [ { "path": "Tests/Handlers/SendMessageCommandHandlerTests.cs", "role": "unit-test" } ]
+    }
+  ],
+  "dependencyGraph": [
+    "Domain <- Application",
+    "Domain <- Infrastructure",
+    "Application <- Infrastructure",
+    "Application <- WebAPI",
+    "Infrastructure <- WebAPI"
+  ],
+  "commands": {
+    "build": "dotnet build",
+    "test": "dotnet test",
+    "run": "dotnet run --project WebAPI/WebAPI.csproj",
+    "migrations": "dotnet ef migrations add <Name> -p Infrastructure -s WebAPI"
+  },
+  "notes": {
+    "signalr": "Azure SignalR connection string lives in appsettings or should be in KeyVault. Program.cs switches to AddAzureSignalR in non-development.",
+    "npgsql": "Npgsql.EnableLegacyTimestampBehavior switch is set at startup in Program.cs",
+    "mediatr": "MediatR handlers are registered via typeof(SendMessageCommandHandler).Assembly in Program.cs"
+  }
+}

@@ -1,0 +1,58 @@
+# Azure Pipelines skeleton: build, test and publish
+trigger:
+  - main
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  buildConfiguration: 'Release'
+
+stages:
+  - stage: Build
+    jobs:
+      - job: Build
+        steps:
+          - task: UseDotNet@2
+            inputs:
+              packageType: 'sdk'
+              version: '7.x'
+
+          - powershell: |
+              Write-Host 'Generating CODEMAP.json before build'
+              pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/Generate-CodeMap.ps1
+              $diff = git status --porcelain CODEMAP.json
+              if ($diff) {
+                Write-Error 'CODEMAP.json is out of date. Please run scripts/Generate-CodeMap.ps1 and commit the updated file.'
+                exit 1
+              }
+            displayName: 'Generate CODEMAP and verify up-to-date'
+
+          - script: dotnet restore
+            displayName: 'dotnet restore'
+
+          - script: dotnet build --configuration $(buildConfiguration) --no-restore
+            displayName: 'dotnet build'
+
+          - script: dotnet test --configuration $(buildConfiguration) --no-build --verbosity normal
+            displayName: 'dotnet test'
+
+  - stage: Deploy
+    dependsOn: Build
+    jobs:
+      - deployment: DeployWeb
+        environment: 'staging'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureWebApp@1
+                  inputs:
+                    appType: 'webApp'
+                    azureSubscription: '<YourServiceConnection>'
+                    appName: '<YourAppServiceName>'
+                    package: '$(System.DefaultWorkingDirectory)/**/WebAPI/bin/Release/net10.0/publish'
+
+# Note:
+# - Store Azure SignalR connection string in Azure Key Vault or in AppSettings of the App Service.
+# - To fetch secrets from Key Vault during pipeline, use AzureKeyVault@2 task and set them as pipeline variables.

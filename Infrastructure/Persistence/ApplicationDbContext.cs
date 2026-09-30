@@ -1,0 +1,39 @@
+﻿using Domain.Entities;
+using Microsoft.EntityFrameworkCore;
+using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace Infrastructure.Persistence
+{
+    public class ApplicationDbContext : DbContext
+    {
+        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
+
+        public DbSet<User> Users => Set<User>();
+        public DbSet<Chat> Chats => Set<Chat>();
+        public DbSet<ChatMember> ChatMembers => Set<ChatMember>();
+        public DbSet<Friendship> Friendships => Set<Friendship>();
+        public DbSet<Message> Messages => Set<Message>(); // Из прошлого шага
+        public DbSet<MessageReaction> MessageReactions => Set<MessageReaction>();
+        public DbSet<Domain.Entities.OutboxMessage> OutboxMessages => Set<Domain.Entities.OutboxMessage>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+
+            // Настройка составного ключа для участников чата (Чат + Юзер)
+            modelBuilder.Entity<ChatMember>()
+                .HasKey(cm => new { cm.ChatId, cm.UserId });
+
+            // Индекс на статус дружбы для быстрого поиска списка друзей
+            modelBuilder.Entity<Friendship>()
+                .HasIndex(f => new { f.UserId, f.FriendId, f.Status });
+
+            // One reaction per user per message — enforced at the DB level too.
+            modelBuilder.Entity<MessageReaction>()
+                .HasIndex(r => new { r.MessageId, r.UserId })
+                .IsUnique();
+        }
+    }
+}

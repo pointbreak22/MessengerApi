@@ -1,0 +1,29 @@
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+TestResults/
+publish/
+*.nupkg
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Secrets — never commit (the repository is public)
+appsettings.Secrets.json
+*.pfx
+*.pem
+.env
+.env.*
+Properties/PublishProfiles/*.pubxml
+Properties/PublishProfiles/*.pubxml.user
+
+# Local databases
+*.db
+*.db-shm
+*.db-wal
