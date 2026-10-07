@@ -26,6 +26,11 @@ namespace Domain.Entities
         public bool IsBanned { get; private set; }
         public DateTime? BannedAt { get; private set; }
 
+        // Предупреждения автомодерации (мат в нике/сообщениях). Сгорают, если
+        // пользователь не нарушал дольше, чем decay (см. AddModerationStrike).
+        public int ModerationStrikes { get; private set; }
+        public DateTime? LastStrikeAt { get; private set; }
+
         private User() { }
 
         public static User Create(string id, string userName, string? avatarUrl, string? email = null, UserRole role = UserRole.User)
@@ -63,10 +68,27 @@ namespace Domain.Entities
             IsOnline = false;
         }
 
+        // Разбаненный начинает с чистого листа — иначе первое же нарушение
+        // после разбана снова дало бы бан.
         public void Unban()
         {
             IsBanned = false;
             BannedAt = null;
+            ModerationStrikes = 0;
+            LastStrikeAt = null;
+        }
+
+        /// <summary>
+        /// Засчитывает нарушение и возвращает номер текущего предупреждения. Если с
+        /// прошлого нарушения прошло больше decay, старые предупреждения сгорают и
+        /// счёт начинается заново.
+        /// </summary>
+        public int AddModerationStrike(DateTime now, TimeSpan decay)
+        {
+            if (LastStrikeAt.HasValue && now - LastStrikeAt.Value > decay) ModerationStrikes = 0;
+            ModerationStrikes++;
+            LastStrikeAt = now;
+            return ModerationStrikes;
         }
 
         public void UpdateStatus(bool isOnline)

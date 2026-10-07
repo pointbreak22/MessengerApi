@@ -51,6 +51,28 @@ namespace WebAPI.Services
                         // десериализуем payload и отправляем через SignalR
                         try
                         {
+                            // Письма (автомодерация) — отдельный тип записи, в чат их не шлём.
+                            if (item.Type == Application.Common.EmailMessage.OutboxType)
+                            {
+                                var email = System.Text.Json.JsonSerializer.Deserialize<Application.Common.EmailMessage>(item.Payload)
+                                    ?? throw new InvalidOperationException("Empty email payload");
+                                var sender = scope.ServiceProvider.GetRequiredService<Application.Common.IEmailSender>();
+                                await sender.SendAsync(email, stoppingToken);
+                                await outbox.MarkSentAsync(item);
+                                continue;
+                            }
+
+                            // Уведомления админу в Telegram (автомодерация).
+                            if (item.Type == Application.Common.TelegramAlert.OutboxType)
+                            {
+                                var alert = System.Text.Json.JsonSerializer.Deserialize<Application.Common.TelegramAlert>(item.Payload)
+                                    ?? throw new InvalidOperationException("Empty telegram payload");
+                                var telegram = scope.ServiceProvider.GetRequiredService<Application.Common.ITelegramSender>();
+                                await telegram.SendAsync(alert, stoppingToken);
+                                await outbox.MarkSentAsync(item);
+                                continue;
+                            }
+
                             var doc = System.Text.Json.JsonDocument.Parse(item.Payload);
                             if (doc.RootElement.TryGetProperty("ChatId", out var chatIdProp))
                             {

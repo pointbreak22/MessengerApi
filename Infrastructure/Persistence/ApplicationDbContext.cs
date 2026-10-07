@@ -17,6 +17,7 @@ namespace Infrastructure.Persistence
         public DbSet<Message> Messages => Set<Message>(); // Из прошлого шага
         public DbSet<MessageReaction> MessageReactions => Set<MessageReaction>();
         public DbSet<Domain.Entities.OutboxMessage> OutboxMessages => Set<Domain.Entities.OutboxMessage>();
+        public DbSet<ModerationViolation> ModerationViolations => Set<ModerationViolation>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -34,6 +35,14 @@ namespace Infrastructure.Persistence
             modelBuilder.Entity<MessageReaction>()
                 .HasIndex(r => new { r.MessageId, r.UserId })
                 .IsUnique();
+
+            // История нарушений в админке читается по пользователю, новые сверху.
+            modelBuilder.Entity<ModerationViolation>(e =>
+            {
+                e.Property(v => v.Content).HasMaxLength(ModerationViolation.MaxContentLength);
+                e.Property(v => v.MatchedWords).HasMaxLength(ModerationViolation.MaxMatchedWordsLength);
+                e.HasIndex(v => new { v.UserId, v.CreatedAt });
+            });
         }
     }
 }

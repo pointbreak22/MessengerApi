@@ -35,20 +35,22 @@ namespace WebAPI.Controllers
         private readonly BanStatusService _bans;
         private readonly SuperAdminPolicy _superAdmin;
         private readonly IHubContext<ChatHub> _hub;
+        private readonly IModerationRepository _violations;
 
-        public AdminController(IUserRepository users, IChatRepository chats, BanStatusService bans, SuperAdminPolicy superAdmin, IHubContext<ChatHub> hub)
+        public AdminController(IUserRepository users, IChatRepository chats, BanStatusService bans, SuperAdminPolicy superAdmin, IHubContext<ChatHub> hub, IModerationRepository violations)
         {
             _users = users;
             _chats = chats;
             _bans = bans;
             _superAdmin = superAdmin;
             _hub = hub;
+            _violations = violations;
         }
 
-        public record AdminUserDto(string Id, string UserName, string? Email, UserRole Role, bool IsOnline, DateTime LastSeenAt, string? AvatarUrl, bool IsBanned, DateTime? BannedAt)
+        public record AdminUserDto(string Id, string UserName, string? Email, UserRole Role, bool IsOnline, DateTime LastSeenAt, string? AvatarUrl, bool IsBanned, DateTime? BannedAt, int ModerationStrikes, DateTime? LastStrikeAt)
         {
             public static AdminUserDto FromEntity(User u) =>
-                new(u.Id, u.UserName, u.Email, u.Role, u.IsOnline, u.LastSeenAt, u.AvatarUrl, u.IsBanned, u.BannedAt);
+                new(u.Id, u.UserName, u.Email, u.Role, u.IsOnline, u.LastSeenAt, u.AvatarUrl, u.IsBanned, u.BannedAt, u.ModerationStrikes, u.LastStrikeAt);
         }
         public record AdminChatDto(Guid Id, string? Name, string? AvatarUrl, bool IsPublic, string? OwnerId, DateTime CreatedAt, int MemberCount);
         public record RenameUserDto(string UserName);
@@ -115,6 +117,26 @@ namespace WebAPI.Controllers
             _bans.Invalidate(id);
 
             return Ok(AdminUserDto.FromEntity(user));
+        }
+
+        /// <summary>
+        /// Нарушения, пойманные автомодерацией: что написал, какое по счёту
+        /// предупреждение, закончилось ли баном. Новые сверху.
+        /// </summary>
+        [HttpGet("users/{id}/violations")]
+        public async Task<IActionResult> GetViolations(string id, [FromQuery] int take = 50)
+        {
+            var items = await _violations.GetByUserAsync(id, Normalize(take, MaxPageSize));
+            return Ok(items.Select(v => new
+            {
+                v.Id,
+                Target = v.Target.ToString(),
+                v.Content,
+                v.MatchedWords,
+                v.StrikeNumber,
+                v.ResultedInBan,
+                v.CreatedAt
+            }));
         }
 
         [HttpGet("chats")]

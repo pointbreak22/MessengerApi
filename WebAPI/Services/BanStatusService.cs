@@ -15,7 +15,7 @@ namespace WebAPI.Services
     ///
     /// Singleton, поэтому репозиторий (Scoped) берётся из отдельного scope.
     /// </summary>
-    public sealed class BanStatusService
+    public sealed class BanStatusService : Application.Common.IBanStatusCache
     {
         public const string BannedErrorCode = "account_banned";
 

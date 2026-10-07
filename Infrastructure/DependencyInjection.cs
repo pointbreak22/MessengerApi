@@ -37,6 +37,7 @@ namespace Infrastructure
             services.AddScoped<IMessageReactionRepository, EfMessageReactionRepository>();
             services.AddScoped<IOutboxRepository, EfOutboxRepository>();
             services.AddScoped<IFriendshipRepository, EfFriendshipRepository>();
+            services.AddScoped<IModerationRepository, EfModerationRepository>();
 
             return services;
         }

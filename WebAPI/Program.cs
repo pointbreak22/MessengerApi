@@ -39,7 +39,8 @@ if (!string.IsNullOrEmpty(builder.Configuration["KeyVault:Endpoint"]))
 }
 
 // 1. Подключаем контроллеры
-builder.Services.AddControllers();
+builder.Services.AddControllers(options =>
+    options.Filters.Add<WebAPI.Auth.ContentViolationExceptionFilter>());
 
 // CORS — allowed origins configured in appsettings ("AllowedOrigins" array)
 builder.Services.AddCors(options =>
@@ -126,7 +127,35 @@ Infrastructure.DependencyInjection.AddInfrastructure(builder.Services, builder.C
 // 4. Регистрируем MediatR (указываем ему искать команды/хэндлеры в слое Application)
 // Используем typeof(Handler).Assembly чтобы надёжно указать сборку с хэндлерами
 builder.Services.AddMediatR(cfg =>
-    cfg.RegisterServicesFromAssembly(typeof(Application.CQRS.Messages.Commands.SendMessageCommandHandler).Assembly));
+{
+    cfg.RegisterServicesFromAssembly(typeof(Application.CQRS.Messages.Commands.SendMessageCommandHandler).Assembly);
+    // Автомодерация: тексты команд, помеченных IModeratedRequest, проверяются до обработчика.
+    cfg.AddOpenBehavior(typeof(Application.Moderation.ContentModerationBehavior<,>));
+});
+
+// Автомодерация (мат в никах, названиях чатов и сообщениях): фильтр, страйки, письма.
+var moderationSettings = builder.Configuration.GetSection(Application.Moderation.ModerationSettings.SectionName)
+    .Get<Application.Moderation.ModerationSettings>() ?? new Application.Moderation.ModerationSettings();
+builder.Services.AddSingleton(moderationSettings);
+builder.Services.AddSingleton<Application.Moderation.IContentFilter, Application.Moderation.ProfanityFilter>();
+builder.Services.AddScoped<Application.Moderation.IModerationService, Application.Moderation.ModerationService>();
+
+var emailConn = builder.Configuration["Email:ConnectionString"];
+var emailSender = builder.Configuration["Email:SenderAddress"];
+if (!string.IsNullOrEmpty(emailConn) && !string.IsNullOrEmpty(emailSender))
+{
+    builder.Services.AddSingleton(new Azure.Communication.Email.EmailClient(emailConn));
+    builder.Services.AddSingleton<Application.Common.IEmailSender>(sp =>
+        new WebAPI.Services.AzureCommunicationEmailSender(sp.GetRequiredService<Azure.Communication.Email.EmailClient>(), emailSender));
+}
+else
+{
+    builder.Services.AddSingleton<Application.Common.IEmailSender, WebAPI.Services.LoggingEmailSender>();
+}
+
+// Telegram: уведомления админу о нарушениях — просто вызов sendMessage, см. секцию "TelegramBot".
+builder.Services.AddHttpClient<Application.Common.ITelegramSender, WebAPI.Services.TelegramSender>(client =>
+    client.BaseAddress = new Uri("https://api.telegram.org"));
 // 5. Настраиваем Аутентификацию через Microsoft.Identity.Web (Entra External ID / CIAM).
 // Instance/TenantId/ClientId читаются из секции "AzureAd" в appsettings — пакет сам разруливает
 // нюансы CIAM (JWKS, issuer-алиасы), которых не хватало при ручной настройке TokenValidationParameters.
@@ -193,9 +222,13 @@ else
 // Бан пользователей: кэш статуса + проверка в middleware (REST, negotiate) и в фильтре хаба.
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<WebAPI.Services.BanStatusService>();
+builder.Services.AddSingleton<Application.Common.IBanStatusCache>(sp => sp.GetRequiredService<WebAPI.Services.BanStatusService>());
 
 Action<Microsoft.AspNetCore.SignalR.HubOptions> configureHub = options =>
+{
     Microsoft.AspNetCore.SignalR.HubOptionsExtensions.AddFilter<WebAPI.Auth.BanHubFilter>(options);
+    Microsoft.AspNetCore.SignalR.HubOptionsExtensions.AddFilter<WebAPI.Auth.ContentViolationHubFilter>(options);
+};
 
 if (builder.Environment.IsDevelopment())
 {
@@ -248,7 +281,7 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<Infrastructure.Persistence.ApplicationDbContext>();
     try
     {
-      //  db.Database.Migrate();
+        //db.Database.Migrate();
     }
     catch (Exception ex)
     {
