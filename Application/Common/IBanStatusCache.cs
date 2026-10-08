@@ -8,4 +8,10 @@ namespace Application.Common
     {
         void Invalidate(string userId);
     }
+
+    /// <summary>То же для бана по IP: новый бан начинает действовать сразу.</summary>
+    public interface IIpBanCache
+    {
+        void InvalidateIp(string ipAddress);
+    }
 }

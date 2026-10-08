@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -28,6 +29,15 @@ namespace Infrastructure.Repositories
                 .OrderByDescending(v => v.CreatedAt)
                 .Take(take)
                 .ToListAsync();
+        }
+
+        public async Task<int> CountOffendersByIpAsync(string ipAddress, DateTime since)
+        {
+            return await _db.ModerationViolations
+                .Where(v => v.IpAddress == ipAddress && v.CreatedAt >= since && v.StrikeNumber > 0)
+                .Select(v => v.UserId)
+                .Distinct()
+                .CountAsync();
         }
     }
 }

@@ -22,8 +22,21 @@ namespace WebAPI.Auth
 
         public BanEnforcementMiddleware(RequestDelegate next) => _next = next;
 
-        public async Task InvokeAsync(HttpContext context, BanStatusService bans)
+        public async Task InvokeAsync(HttpContext context, BanStatusService bans, IpBanStatusService ipBans, SuperAdminPolicy superAdmin)
         {
+            // Бан по IP закрывает всех с этого адреса, включая анонимные запросы, —
+            // кроме суперадмина: иначе он не смог бы зайти в админку и снять бан.
+            if (await IsIpBlockedAsync(context, context.User, ipBans, superAdmin))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    code = IpBanStatusService.BannedErrorCode,
+                    message = "Доступ с этого IP-адреса заблокирован."
+                });
+                return;
+            }
+
             var userId = ReadUserId(context.User);
             if (!string.IsNullOrEmpty(userId) && await bans.IsBannedAsync(userId))
             {
@@ -47,6 +60,22 @@ namespace WebAPI.Auth
                 ?? principal.FindFirst("oid")?.Value
                 ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         }
+
+        // Тот же порядок, что в ApiControllerBase.GetCurrentUserEmail (по нему определяется суперадмин).
+        internal static string? ReadEmail(ClaimsPrincipal? principal)
+        {
+            if (principal?.Identity?.IsAuthenticated != true) return null;
+            return principal.FindFirst("preferred_username")?.Value
+                ?? principal.FindFirst(ClaimTypes.Email)?.Value
+                ?? principal.FindFirst("email")?.Value
+                ?? principal.FindFirst("emails")?.Value;
+        }
+
+        internal static async Task<bool> IsIpBlockedAsync(HttpContext? http, ClaimsPrincipal? user, IpBanStatusService ipBans, SuperAdminPolicy superAdmin)
+        {
+            if (superAdmin.IsSuperAdminEmail(ReadEmail(user))) return false;
+            return await ipBans.IsBannedAsync(ClientIp.Resolve(http));
+        }
     }
 
     /// <summary>
@@ -56,8 +85,15 @@ namespace WebAPI.Auth
     public sealed class BanHubFilter : IHubFilter
     {
         private readonly BanStatusService _bans;
+        private readonly IpBanStatusService _ipBans;
+        private readonly SuperAdminPolicy _superAdmin;
 
-        public BanHubFilter(BanStatusService bans) => _bans = bans;
+        public BanHubFilter(BanStatusService bans, IpBanStatusService ipBans, SuperAdminPolicy superAdmin)
+        {
+            _bans = bans;
+            _ipBans = ipBans;
+            _superAdmin = superAdmin;
+        }
 
         public async ValueTask<object?> InvokeMethodAsync(
             HubInvocationContext invocationContext,
@@ -66,6 +102,8 @@ namespace WebAPI.Auth
             var userId = invocationContext.Context.UserIdentifier;
             if (!string.IsNullOrEmpty(userId) && await _bans.IsBannedAsync(userId))
                 throw new HubException(BanStatusService.BannedErrorCode);
+            if (await BanEnforcementMiddleware.IsIpBlockedAsync(invocationContext.Context.GetHttpContext(), invocationContext.Context.User, _ipBans, _superAdmin))
+                throw new HubException(IpBanStatusService.BannedErrorCode);
 
             return await next(invocationContext);
         }
@@ -73,7 +111,8 @@ namespace WebAPI.Auth
         public async Task OnConnectedAsync(HubLifetimeContext context, Func<HubLifetimeContext, Task> next)
         {
             var userId = context.Context.UserIdentifier;
-            if (!string.IsNullOrEmpty(userId) && await _bans.IsBannedAsync(userId))
+            if ((!string.IsNullOrEmpty(userId) && await _bans.IsBannedAsync(userId))
+                || await BanEnforcementMiddleware.IsIpBlockedAsync(context.Context.GetHttpContext(), context.Context.User, _ipBans, _superAdmin))
             {
                 context.Context.Abort();
                 return;

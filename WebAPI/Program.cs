@@ -223,6 +223,12 @@ else
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<WebAPI.Services.BanStatusService>();
 builder.Services.AddSingleton<Application.Common.IBanStatusCache>(sp => sp.GetRequiredService<WebAPI.Services.BanStatusService>());
+// Бан по IP (вручную из админки или автобан модерации) — тот же принцип: кэш + проверка в middleware и фильтре хаба.
+builder.Services.AddSingleton<WebAPI.Services.IpBanStatusService>();
+builder.Services.AddSingleton<Application.Common.IIpBanCache>(sp => sp.GetRequiredService<WebAPI.Services.IpBanStatusService>());
+// IP клиента для Application-слоя (журнал нарушений, автобан IP, IP последнего входа).
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<Application.Common.IClientContext, WebAPI.Services.HttpClientContext>();
 
 Action<Microsoft.AspNetCore.SignalR.HubOptions> configureHub = options =>
 {

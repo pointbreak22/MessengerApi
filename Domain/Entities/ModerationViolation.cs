@@ -20,11 +20,13 @@ namespace Domain.Entities
         public string MatchedWords { get; private set; } = null!;
         public int StrikeNumber { get; private set; }
         public bool ResultedInBan { get; private set; }
+        // С какого IP было нарушение — по нему считается автобан IP (см. IpBan).
+        public string? IpAddress { get; private set; }
         public DateTime CreatedAt { get; private set; }
 
         private ModerationViolation() { }
 
-        public static ModerationViolation Create(string userId, ModerationTarget target, string content, string matchedWords, int strikeNumber, bool resultedInBan)
+        public static ModerationViolation Create(string userId, ModerationTarget target, string content, string matchedWords, int strikeNumber, bool resultedInBan, string? ipAddress = null)
         {
             return new ModerationViolation
             {
@@ -35,6 +37,7 @@ namespace Domain.Entities
                 MatchedWords = matchedWords.Length > MaxMatchedWordsLength ? matchedWords.Substring(0, MaxMatchedWordsLength) : matchedWords,
                 StrikeNumber = strikeNumber,
                 ResultedInBan = resultedInBan,
+                IpAddress = ipAddress != null && ipAddress.Length > IpBan.MaxIpLength ? ipAddress.Substring(0, IpBan.MaxIpLength) : ipAddress,
                 CreatedAt = DateTime.UtcNow
             };
         }

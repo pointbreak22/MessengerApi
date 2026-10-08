@@ -31,6 +31,10 @@ namespace Domain.Entities
         public int ModerationStrikes { get; private set; }
         public DateTime? LastStrikeAt { get; private set; }
 
+        // IP, с которого пользователь заходил последний раз (обновляется при каждом
+        // входе — GET /api/users/me). Только для админки, другим не отдаётся.
+        public string? LastIpAddress { get; private set; }
+
         private User() { }
 
         public static User Create(string id, string userName, string? avatarUrl, string? email = null, UserRole role = UserRole.User)
@@ -89,6 +93,14 @@ namespace Domain.Entities
             ModerationStrikes++;
             LastStrikeAt = now;
             return ModerationStrikes;
+        }
+
+        /// <returns>true, если IP изменился и запись нужно сохранить.</returns>
+        public bool SetLastIpAddress(string? ip)
+        {
+            if (string.IsNullOrWhiteSpace(ip) || ip == LastIpAddress) return false;
+            LastIpAddress = ip.Length > IpBan.MaxIpLength ? ip.Substring(0, IpBan.MaxIpLength) : ip;
+            return true;
         }
 
         public void UpdateStatus(bool isOnline)

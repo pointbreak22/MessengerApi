@@ -36,8 +36,10 @@ namespace WebAPI.Controllers
         private readonly SuperAdminPolicy _superAdmin;
         private readonly IHubContext<ChatHub> _hub;
         private readonly IModerationRepository _violations;
+        private readonly IIpBanRepository _ipBans;
+        private readonly IpBanStatusService _ipBanStatus;
 
-        public AdminController(IUserRepository users, IChatRepository chats, BanStatusService bans, SuperAdminPolicy superAdmin, IHubContext<ChatHub> hub, IModerationRepository violations)
+        public AdminController(IUserRepository users, IChatRepository chats, BanStatusService bans, SuperAdminPolicy superAdmin, IHubContext<ChatHub> hub, IModerationRepository violations, IIpBanRepository ipBans, IpBanStatusService ipBanStatus)
         {
             _users = users;
             _chats = chats;
@@ -45,16 +47,20 @@ namespace WebAPI.Controllers
             _superAdmin = superAdmin;
             _hub = hub;
             _violations = violations;
+            _ipBans = ipBans;
+            _ipBanStatus = ipBanStatus;
         }
 
-        public record AdminUserDto(string Id, string UserName, string? Email, UserRole Role, bool IsOnline, DateTime LastSeenAt, string? AvatarUrl, bool IsBanned, DateTime? BannedAt, int ModerationStrikes, DateTime? LastStrikeAt)
+        public record AdminUserDto(string Id, string UserName, string? Email, UserRole Role, bool IsOnline, DateTime LastSeenAt, string? AvatarUrl, bool IsBanned, DateTime? BannedAt, int ModerationStrikes, DateTime? LastStrikeAt, string? LastIpAddress)
         {
             public static AdminUserDto FromEntity(User u) =>
-                new(u.Id, u.UserName, u.Email, u.Role, u.IsOnline, u.LastSeenAt, u.AvatarUrl, u.IsBanned, u.BannedAt, u.ModerationStrikes, u.LastStrikeAt);
+                new(u.Id, u.UserName, u.Email, u.Role, u.IsOnline, u.LastSeenAt, u.AvatarUrl, u.IsBanned, u.BannedAt, u.ModerationStrikes, u.LastStrikeAt, u.LastIpAddress);
         }
         public record AdminChatDto(Guid Id, string? Name, string? AvatarUrl, bool IsPublic, string? OwnerId, DateTime CreatedAt, int MemberCount);
         public record RenameUserDto(string UserName);
         public record UpdateChatDto(string? Name, bool? IsPublic);
+        public record IpBanDto(Guid Id, string IpAddress, string Reason, bool IsAutomatic, DateTime CreatedAt, DateTime? ExpiresAt);
+        public record CreateIpBanDto(string IpAddress, string? Reason, int? Days);
 
         /// <summary>Все, кто когда-либо входил: строка в БД создаётся при первом входе.</summary>
         [HttpGet("users")]
@@ -135,9 +141,52 @@ namespace WebAPI.Controllers
                 v.MatchedWords,
                 v.StrikeNumber,
                 v.ResultedInBan,
+                v.IpAddress,
                 v.CreatedAt
             }));
         }
+
+        /// <summary>Действующие баны по IP (истёкшие не показываются), новые сверху.</summary>
+        [HttpGet("ip-bans")]
+        public async Task<IActionResult> GetIpBans()
+        {
+            var items = await _ipBans.GetActiveAsync(DateTime.UtcNow);
+            return Ok(items.Select(ToDto));
+        }
+
+        /// <summary>
+        /// Ручной бан IP. Days не задан или 0 — бессрочно. Свой текущий IP забанить
+        /// можно: на суперадмина бан по IP не действует.
+        /// </summary>
+        [HttpPost("ip-bans")]
+        public async Task<IActionResult> BanIp([FromBody] CreateIpBanDto dto)
+        {
+            var ip = dto?.IpAddress?.Trim();
+            if (string.IsNullOrWhiteSpace(ip) || !System.Net.IPAddress.TryParse(ip, out _))
+                return BadRequest("Некорректный IP-адрес.");
+
+            var now = DateTime.UtcNow;
+            if (await _ipBans.IsBannedAsync(ip, now)) return Conflict("Этот IP уже заблокирован.");
+
+            DateTime? expires = dto!.Days is > 0 ? now.AddDays(dto.Days.Value) : null;
+            var ban = IpBan.Create(ip, dto.Reason ?? "Вручную из админки", isAutomatic: false, expires);
+            await _ipBans.AddAsync(ban);
+            _ipBanStatus.InvalidateIp(ban.IpAddress);
+            return Ok(ToDto(ban));
+        }
+
+        [HttpDelete("ip-bans/{id:guid}")]
+        public async Task<IActionResult> UnbanIp(Guid id)
+        {
+            var ban = await _ipBans.GetByIdAsync(id);
+            if (ban == null) return NotFound();
+
+            await _ipBans.RemoveAsync(ban);
+            _ipBanStatus.InvalidateIp(ban.IpAddress);
+            return NoContent();
+        }
+
+        private static IpBanDto ToDto(IpBan b) => new(b.Id, b.IpAddress, b.Reason, b.IsAutomatic, b.CreatedAt, b.ExpiresAt);
 
         [HttpGet("chats")]
         public async Task<IActionResult> GetPublicChats([FromQuery] int page = 1, [FromQuery] int pageSize = 50, [FromQuery] string? search = null)

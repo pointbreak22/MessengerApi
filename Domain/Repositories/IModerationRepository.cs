@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Domain.Entities;
@@ -11,5 +12,9 @@ namespace Domain.Repositories
         Task RecordViolationAsync(User user, ModerationViolation violation, IEnumerable<OutboxMessage> notifications);
 
         Task<IReadOnlyList<ModerationViolation>> GetByUserAsync(string userId, int take);
+
+        // Сколько разных аккаунтов получили страйк за нарушение с этого IP начиная с since
+        // (нарушения суперадмина, StrikeNumber = 0, не считаются).
+        Task<int> CountOffendersByIpAsync(string ipAddress, DateTime since);
     }
 }

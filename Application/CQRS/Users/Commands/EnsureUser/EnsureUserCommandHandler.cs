@@ -14,12 +14,14 @@ namespace Application.CQRS.Users.Commands
         private readonly IUserRepository _users;
         private readonly IContentFilter? _filter;
         private readonly IModerationService? _moderation;
+        private readonly Application.Common.IClientContext? _client;
 
-        public EnsureUserCommandHandler(IUserRepository users, IContentFilter? filter = null, IModerationService? moderation = null)
+        public EnsureUserCommandHandler(IUserRepository users, IContentFilter? filter = null, IModerationService? moderation = null, Application.Common.IClientContext? client = null)
         {
             _users = users;
             _filter = filter;
             _moderation = moderation;
+            _client = client;
         }
 
         public async Task<UserDto> Handle(EnsureUserCommand request, CancellationToken cancellationToken)
@@ -47,12 +49,16 @@ namespace Application.CQRS.Users.Commands
                     changed = true;
                 }
 
+                // IP последнего входа — для админки (видно, откуда заходят).
+                if (user.SetLastIpAddress(_client?.IpAddress)) changed = true;
+
                 if (changed) await _users.UpdateAsync(user);
                 await ModerateUserNameAsync(user, cancellationToken);
                 return UserDto.FromEntity(user);
             }
 
             user = User.Create(request.Id, request.UserName, avatarUrl: null, email: request.Email, role: desiredRole);
+            user.SetLastIpAddress(_client?.IpAddress);
             await _users.AddAsync(user);
             await ModerateUserNameAsync(user, cancellationToken);
             return UserDto.FromEntity(user);
