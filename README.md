@@ -1,7 +1,7 @@
 # MessengerApi
 
 Backend of a real-time messenger: ASP.NET Core Web API + SignalR hub, deployed on Azure.
-Frontend: [MessengerClient](https://github.com/pointbreak22/MessengerClient) · Demo: https://green-mud-0a6cd920f.7.azurestaticapps.net/app
+Frontend: [MessengerClient](https://github.com/pointbreak22/MessengerClient) · Demo: https://messenger.pointbreakvexforge.com
 
 ## Stack
 
